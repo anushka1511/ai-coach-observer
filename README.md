@@ -247,13 +247,5 @@ For production deployment:
 - ChromaDB is used for session storage (data persists in `.chromadb/` directory)
 - All ML models are stored in the `models/` directory
 
-## 🤝 Support
-
-For issues or questions:
-1. Check the troubleshooting section
-2. Review logs in the terminal output
-3. Verify API keys and internet connectivity
 
 ---
-
-**Happy Coaching! 🎯**
