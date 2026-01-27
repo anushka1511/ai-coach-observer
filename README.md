@@ -244,12 +244,10 @@ For production deployment:
 
 - The system uses AssemblyAI's streaming.v3 API for real-time transcription
 - Models are loaded on first use - initial startup may take a moment
-
-## DFD
-<img width="732" height="847" alt="image" src="https://github.com/user-attachments/assets/e653b626-d958-47a3-acfe-ce2a1a474085" />
-
 - ChromaDB is used for session storage (data persists in `.chromadb/` directory)
 - All ML models are stored in the `models/` directory
 
 
+## DFD
+<img width="732" height="847" alt="image" src="https://github.com/user-attachments/assets/e653b626-d958-47a3-acfe-ce2a1a474085" />
 ---
