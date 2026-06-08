@@ -4,6 +4,7 @@ File Audio Processor - Process WAV files through AssemblyAI
 import asyncio
 import logging
 from pathlib import Path
+from typing import Optional
 import assemblyai as aai
 from datetime import datetime
 
@@ -14,12 +15,13 @@ logger = logging.getLogger(__name__)
 
 class FileAudioProcessor:
     """Process audio from WAV files using AssemblyAI"""
-    
-    def __init__(self, api_key: str):
+
+    def __init__(self, api_key: str, coach_speaker_id: Optional[str] = None):
         self.api_key = api_key
         aai.settings.api_key = api_key
         self.transcriber = aai.Transcriber()
         self.audio_queue = None
+        self.coach_speaker_id = coach_speaker_id  # "A" or "B" - which speaker is coach
     
     async def process_file(self, file_path: str, audio_queue: asyncio.Queue):
         """
@@ -92,24 +94,29 @@ class FileAudioProcessor:
     
     def _map_speaker(self, speaker_id: str, text: str) -> str:
         """Map AssemblyAI speaker labels to coach/coachee"""
+        # If user specified which speaker is coach, use that mapping directly
+        if self.coach_speaker_id:
+            return "coach" if speaker_id == self.coach_speaker_id else "coachee"
+
+        # Otherwise fall back to heuristic-based detection
         text_lower = text.lower()
-        
+
         coachee_phrases = [
             "i don't know", "i'm not sure", "i worry", "i feel",
             "i think", "my problem", "i want to", "i need"
         ]
-        
+
         coach_phrases = [
             "what would you", "how do you feel", "tell me about",
             "what's stopping you", "what if you", "have you considered"
         ]
-        
+
         coachee_score = sum(1 for phrase in coachee_phrases if phrase in text_lower)
         coach_score = sum(1 for phrase in coach_phrases if phrase in text_lower)
-        
+
         if "?" in text:
             coach_score += 1
-        
+
         if coachee_score > coach_score:
             return "coachee"
         elif coach_score > coachee_score:

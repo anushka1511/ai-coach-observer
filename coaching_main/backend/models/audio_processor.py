@@ -5,6 +5,7 @@ import asyncio
 import logging
 import threading
 from datetime import datetime
+from typing import Optional
 import assemblyai as aai
 from assemblyai.streaming.v3 import (
     StreamingClient,
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """Handles real-time audio processing with AssemblyAI (streaming.v3 API)"""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, default_coach_role: bool = True, coach_speaker_id: Optional[str] = None):
         self.api_key = api_key
         self.client: StreamingClient | None = None
         self.session_active = False
@@ -31,6 +32,16 @@ class AudioProcessor:
         self.device_index = None
         self.event_loop: asyncio.AbstractEventLoop | None = None
         self.stream_thread = None
+        self.default_coach_role = default_coach_role
+        # Optional override: caller may pin which AssemblyAI speaker id is the coach
+        # (e.g. "A" or "SPEAKER_A"). When set, the heuristic is bypassed.
+        self.coach_speaker_id: Optional[str] = None
+        if coach_speaker_id:
+            normalized = coach_speaker_id.upper()
+            self.coach_speaker_id = normalized if normalized.startswith("SPEAKER_") else f"SPEAKER_{normalized}"
+        # Maps AssemblyAI speaker_id (e.g. "SPEAKER_A") to role ("coach"/"coachee")
+        # Locked on first classification so same voice keeps same label all session
+        self._speaker_map: dict[str, str] = {}
 
     async def start_live_transcription(self, audio_queue: asyncio.Queue, device_index=None):
         """Start live transcription with AssemblyAI streaming API"""
@@ -57,6 +68,8 @@ class AudioProcessor:
                 StreamingParameters(
                     sample_rate=16000,
                     format_turns=True,
+                    speaker_labels=True,
+                    speech_model="universal-streaming-english"
                 )
             )
             logger.info("✅ Successfully connected to AssemblyAI streaming API")
@@ -126,15 +139,44 @@ class AudioProcessor:
             logger.warning("Audio queue is None, cannot process transcription")
             return
 
-        # Smart speaker detection based on content
-        speaker_label = self._detect_speaker(transcript_text)
-        duration = getattr(event, "audio_duration_seconds", 2.0)
+        # Use AssemblyAI's speaker_id when available to ensure consistency,
+        # falling back to heuristic-only when diarization produces no id
+        speaker_id = getattr(event, "speaker_id", None)
+        is_final   = bool(getattr(event, "end_of_turn", True))
+        duration   = getattr(event, "audio_duration_seconds", 2.0)
+
+        # Prefer AssemblyAI diarization: assign roles by ORDER of appearance,
+        # not by pronoun heuristics. Heuristic is only used when AssemblyAI
+        # gives no speaker_id at all.
+        if speaker_id:
+            if speaker_id not in self._speaker_map and is_final:
+                # Explicit override from session start takes precedence.
+                if self.coach_speaker_id and speaker_id == self.coach_speaker_id:
+                    self._speaker_map[speaker_id] = "coach"
+                elif self.coach_speaker_id:
+                    self._speaker_map[speaker_id] = "coachee"
+                else:
+                    # Order-based assignment: first distinct voice → coach,
+                    # second → coachee. Third+ falls back to heuristic.
+                    existing_roles = set(self._speaker_map.values())
+                    if "coach" not in existing_roles:
+                        self._speaker_map[speaker_id] = "coach"
+                    elif "coachee" not in existing_roles:
+                        self._speaker_map[speaker_id] = "coachee"
+                    else:
+                        self._speaker_map[speaker_id] = self._detect_speaker(transcript_text)
+                logger.info(f"🔒 Locked speaker mapping: {speaker_id} → {self._speaker_map[speaker_id]}")
+            speaker_label = self._speaker_map.get(speaker_id) or self._detect_speaker(transcript_text)
+        else:
+            speaker_label = self._detect_speaker(transcript_text)
 
         chunk = AudioChunk(
             timestamp=datetime.now().timestamp(),
             duration=duration,
             speaker=speaker_label,
+            speaker_id=speaker_id,
             transcript=transcript_text,
+            is_final=is_final,
         )
         
         try:
@@ -190,7 +232,7 @@ class AudioProcessor:
             # Default: if uncertain and contains "I feel/think/want", it's coachee
             if any(phrase in transcript_lower for phrase in ["i feel", "i think", "i want", "i don't"]):
                 return "coachee"
-            return "coach"  # Default fallback
+            return "coach" if self.default_coach_role else "coachee"
 
     def _handle_error_wrapper(self, client: StreamingClient, error: StreamingError):
         """Wrapper for error handler"""

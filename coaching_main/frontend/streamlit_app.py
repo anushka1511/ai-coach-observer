@@ -1,7 +1,8 @@
 """
 AI Coaching Observer - Complete Streamlit Frontend Dashboard
-==================================================
-Real-time stats display with GROW phase, engagement, and learning style
+WITH SARCASM DETECTION SUPPORT
+Real-time stats display with GROW phase, engagement, digression, sarcasm, and learning style
+FULLY CORRECTED VERSION - Ready to use
 """
 
 import streamlit as st
@@ -10,6 +11,7 @@ import websocket
 import json
 import threading
 import time
+import html
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -108,8 +110,20 @@ if 'current_engagement' not in st.session_state:
     st.session_state.current_engagement = 0.5
 if 'current_learning_style' not in st.session_state:
     st.session_state.current_learning_style = "Unknown"
+if 'current_digression' not in st.session_state:
+    st.session_state.current_digression = 0.0
+if 'current_sarcasm' not in st.session_state:
+    st.session_state.current_sarcasm = 0.0
+if 'sarcasm_detected' not in st.session_state:
+    st.session_state.sarcasm_detected = False
 if 'ws_client' not in st.session_state:
     st.session_state.ws_client = WebSocketClient()
+# Transcript architecture: only final turns go into transcript_history;
+# in-progress text lives in current_utterances keyed by speaker.
+if 'transcript_history' not in st.session_state:
+    st.session_state.transcript_history = []
+if 'current_utterances' not in st.session_state:
+    st.session_state.current_utterances = {'coach': '', 'coachee': ''}
 
 # =============================================================================
 # UTILITY FUNCTIONS
@@ -120,16 +134,29 @@ def start_session():
     try:
         with st.spinner("Starting session..."):
             response = requests.post(
-                f"{API_BASE_URL}/session/start", 
+                f"{API_BASE_URL}/session/start",
                 json={"session_type": "live"},
                 timeout=10
             )
             if response.status_code == 200:
                 data = response.json()
+                # Wipe all prior-session UI state so a new session starts clean.
+                # No insights/recommendations/transcripts/metric chips from the
+                # previous session may bleed into this one.
+                st.session_state.pop('final_report', None)
+                st.session_state.feedback_data = []
+                st.session_state.transcript_history = []
+                st.session_state.current_utterances = {'coach': '', 'coachee': ''}
+                st.session_state.current_grow_phase = "Uncertain"
+                st.session_state.current_engagement = 0.0
+                st.session_state.current_learning_style = "Unknown"
+                st.session_state.current_digression = 0.0
+                st.session_state.current_sarcasm = 0.0
+                st.session_state.sarcasm_detected = False
+
                 st.session_state.session_id = data["session_id"]
                 st.session_state.session_active = True
-                st.session_state.feedback_data = []
-                
+
                 # Connect WebSocket
                 if not st.session_state.ws_client.connected:
                     if st.session_state.ws_client.connect():
@@ -183,24 +210,43 @@ def get_session_status():
         return None
 
 def process_real_time_updates():
-    """Process real-time updates from WebSocket"""
+    """Route WebSocket messages into partial (live) or final (history) buckets."""
     new_data = []
-    
-    # Get messages from WebSocket client's queue
-    if 'ws_client' in st.session_state:
-        messages = st.session_state.ws_client.get_messages()
-        for feedback in messages:
-            st.session_state.feedback_data.append(feedback)
-            new_data.append(feedback)
-            
-            # Update current stats
-            if 'grow_phase' in feedback:
-                st.session_state.current_grow_phase = feedback['grow_phase'].get('phase', 'Reality')
-            if 'engagement_score' in feedback:
-                st.session_state.current_engagement = feedback['engagement_score']
-            if 'learning_style' in feedback:
-                st.session_state.current_learning_style = feedback['learning_style']
-    
+
+    if 'ws_client' not in st.session_state:
+        return new_data
+
+    for msg in st.session_state.ws_client.get_messages():
+        msg_type = msg.get('type', 'final')
+        speaker  = msg.get('speaker', 'coach')
+
+        if msg_type == 'partial':
+            # Update the live streaming bubble; do NOT add to history
+            st.session_state.current_utterances[speaker] = msg.get('transcript', '')
+            continue
+
+        # --- final message ---
+        # Clear the streaming bubble for this speaker
+        st.session_state.current_utterances[speaker] = ''
+
+        # Add to both legacy feedback_data (for analytics) and transcript_history
+        st.session_state.feedback_data.append(msg)
+        st.session_state.transcript_history.append(msg)
+        new_data.append(msg)
+
+        if 'grow_phase' in msg:
+            st.session_state.current_grow_phase = msg['grow_phase'].get('phase', 'Reality')
+        if 'engagement_score' in msg:
+            st.session_state.current_engagement = msg['engagement_score']
+        if 'learning_style' in msg:
+            st.session_state.current_learning_style = msg['learning_style']
+        if 'digression_level' in msg:
+            st.session_state.current_digression = msg['digression_level']
+        if 'sarcasm_score' in msg:
+            st.session_state.current_sarcasm = msg['sarcasm_score']
+        if 'sarcasm_detected' in msg:
+            st.session_state.sarcasm_detected = msg['sarcasm_detected']
+
     return new_data
 
 # =============================================================================
@@ -239,7 +285,6 @@ def render_control_panel():
     if st.session_state.session_active:
         status = get_session_status()
         if status:
-            st.sidebar.metric("Duration", f"{status.get('duration', 0):.1f} min")
             st.sidebar.metric("Chunks Processed", status.get('chunks_processed', 0))
             ws_connected = st.session_state.ws_client.connected if 'ws_client' in st.session_state else False
             st.sidebar.metric("WebSocket", "🟢 Connected" if ws_connected else "🔴 Disconnected")
@@ -254,31 +299,76 @@ def render_control_panel():
             st.sidebar.error("❌ Backend Offline")
 
 def render_live_stats_banner():
-    """Render prominent live statistics banner"""
+    """Render prominent live statistics banner with SARCASM"""
     st.markdown("### 📊 Live Session Stats")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
         phase = st.session_state.current_grow_phase
-        phase_emoji = {"Goal": "🎯", "Reality": "🔍", "Options": "💡", "Way Forward": "🚀"}.get(phase, "📍")
-        st.metric("Current GROW Phase", f"{phase_emoji} {phase}", help="Current phase in GROW model")
+        phase_emoji = {"Goal": "🎯", "Reality": "🔍", "Options": "💡", "Way Forward": "🚀", "Uncertain": "❓"}.get(phase, "📍")
+        st.metric("GROW Phase", f"{phase_emoji} {phase}", help="Current phase in GROW model")
     
     with col2:
         engagement = st.session_state.current_engagement
         engagement_pct = int(engagement * 100)
         color = "🟢" if engagement > 0.6 else "🟡" if engagement > 0.3 else "🔴"
         delta = f"{engagement_pct-50}%" if engagement != 0.5 else None
-        st.metric("Engagement Level", f"{color} {engagement_pct}%", delta=delta, help="Coachee engagement")
+        st.metric("Engagement", f"{color} {engagement_pct}%", delta=delta, help="Coachee engagement")
     
     with col3:
-        style = st.session_state.current_learning_style
-        style_emoji = {"Visual": "👁️", "Auditory": "👂", "Kinesthetic": "✋"}.get(style, "❓")
-        st.metric("Learning Style", f"{style_emoji} {style}", help="VAK learning preference")
+        # Topic Focus (inverse of digression)
+        digression = st.session_state.current_digression
+        focus_score = 1 - digression
+        focus_pct = int(focus_score * 100)
+        
+        if digression < 0.3:
+            focus_icon = "🟢"
+            focus_label = "Focused"
+        elif digression < 0.6:
+            focus_icon = "🟡"
+            focus_label = "Drifting"
+        else:
+            focus_icon = "🔴"
+            focus_label = "Off-Topic"
+        
+        st.metric(
+            "Topic Focus", 
+            f"{focus_icon} {focus_pct}%",
+            delta=focus_label,
+            help="Conversation focus (lower digression = better)"
+        )
     
     with col4:
+        # NEW: SARCASM INDICATOR
+        sarcasm = st.session_state.current_sarcasm
+        sarcasm_pct = int(sarcasm * 100)
+        
+        if sarcasm < 0.3:
+            sarcasm_icon = "🟢"
+            sarcasm_label = "Genuine"
+        elif sarcasm < 0.6:
+            sarcasm_icon = "🟡"
+            sarcasm_label = "Possibly Sarcastic"
+        else:
+            sarcasm_icon = "😏"
+            sarcasm_label = "Sarcastic"
+        
+        st.metric(
+            "Tone Authenticity",
+            f"{sarcasm_icon} {100-sarcasm_pct}%",
+            delta=sarcasm_label,
+            help="Detects sarcasm/passive-aggression"
+        )
+    
+    with col5:
+        style = st.session_state.current_learning_style
+        style_emoji = {"Visual": "👁️", "Auditory": "👂", "Kinesthetic": "✋"}.get(style.split('(')[0].strip(), "❓")
+        st.metric("Learning Style", f"{style_emoji} {style}", help="VAK learning preference")
+    
+    with col6:
         total = len(st.session_state.feedback_data)
-        st.metric("Total Interactions", total, help="Conversational turns processed")
+        st.metric("Interactions", total, help="Total turns processed")
 
 def render_real_time_feedback():
     """Render real-time feedback section"""
@@ -289,32 +379,42 @@ def render_real_time_feedback():
     if not st.session_state.feedback_data:
         st.info("⏳ Waiting for session data... Speak into your microphone to see real-time transcription.")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             status = get_session_status()
             if status:
-                st.metric("Session Duration", f"{status.get('duration', 0):.1f} min")
+                st.metric("Chunks Processed", status.get('chunks_processed', 0))
         with col2:
-            st.metric("Chunks Processed", status.get('chunks_processed', 0) if status else 0)
-        with col3:
             ws_status = "🟢 Connected" if st.session_state.ws_client.connected else "🔴 Disconnected"
             st.metric("WebSocket", ws_status)
+        with col3:
+            st.metric("Digression", "0%")
+        with col4:
+            st.metric("Sarcasm", "0%")
         return
     
     # Live Stats Banner
     render_live_stats_banner()
+    
+    # Sarcasm Alert
+    if st.session_state.sarcasm_detected and st.session_state.current_sarcasm > 0.4:
+        st.error(f"😏 **Sarcasm Detected!** The current tone may indicate frustration, resistance, or passive-aggression. (Score: {st.session_state.current_sarcasm:.0%})")
+    
+    # Digression Alert
+    digression = st.session_state.current_digression
+    if digression > 0.6:
+        st.error(f"⚠️ **Conversation is drifting off-topic** (Digression: {digression:.0%})")
+    elif digression > 0.4:
+        st.warning(f"💡 **Topic focus decreasing** (Digression: {digression:.0%})")
+    
     st.markdown("---")
     
-    # Main dashboard
-    col_left, col_right = st.columns([2, 1])
-    
-    with col_left:
-        st.subheader("💬 Live Conversation Transcript")
-        render_live_transcript_compact()
-    
-    with col_right:
-        st.subheader("💡 AI Coaching Suggestions")
-        render_latest_suggestions()
+    # Split transcript — full width
+    st.subheader("💬 Live Conversation")
+    render_live_transcript_compact()
+
+    st.subheader("💡 AI Coaching Suggestions")
+    render_latest_suggestions()
     
     st.markdown("---")
     st.subheader("📈 Analytics & Trends")
@@ -329,39 +429,90 @@ def render_real_time_feedback():
     with col_emotions:
         render_emotion_tracking()
 
+def _utterance_card(msg: dict, streaming: bool = False) -> str:
+    """Return an HTML card for one finalized (or in-progress) utterance."""
+    ts        = datetime.fromtimestamp(msg['timestamp']).strftime("%H:%M:%S") if 'timestamp' in msg else ""
+    # Escape user-facing text before interpolation — transcripts can contain
+    # `<`, `>`, `&` which would otherwise break the surrounding HTML layout.
+    transcript = html.escape(msg.get('transcript', '—'))
+    digression = msg.get('digression_level', 0.0)
+    sarcasm    = msg.get('sarcasm_score', 0.0)
+    speaker    = msg.get('speaker', 'coach')
+    speaker_id = msg.get('speaker_id')
+
+    if speaker == 'coach':
+        border, label_color = '#1565C0', '#1565C0'
+        grow   = msg.get('grow_phase', {}).get('phase', '')
+        meta   = f"GROW: <b>{grow}</b> &nbsp;·&nbsp; Engagement: {msg.get('engagement_score', 0):.0%}" if grow else ""
+    else:
+        border, label_color = '#6A1B9A', '#6A1B9A'
+        primary_emotion = (
+            max(msg.get('emotion_trend', {}).items(), key=lambda x: x[1])[0].title()
+            if msg.get('emotion_trend') else ""
+        )
+        meta = f"Emotion: <b>{primary_emotion}</b> &nbsp;·&nbsp; Interest: {msg.get('engagement_score', 0):.0%}" if primary_emotion else ""
+
+    id_badge   = (f'<span style="font-size:10px;border:1px solid {border};border-radius:3px;'
+                  f'padding:0 3px;opacity:.6;margin-left:4px;">Spk {speaker_id.replace("SPEAKER_","")}</span>'
+                  if speaker_id else "")
+    focus_dot  = "🟢" if digression < 0.3 else ("🟡" if digression < 0.6 else "🔴")
+    sarc_badge = "😏" if sarcasm > 0.6 else ("🤨" if sarcasm > 0.4 else "")
+    streaming_indicator = ('<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
+                           'background:#4CAF50;margin-left:6px;animation:pulse 1s infinite;"></span>'
+                           if streaming else "")
+
+    bg = "#f0f7ff" if not streaming else "#e8f5e9"
+    return f"""
+    <div style="background:{bg};border-left:4px solid {border};border-radius:6px;
+                padding:10px 12px;margin:5px 0;">
+        <div style="display:flex;align-items:center;margin-bottom:5px;">
+            {id_badge}{streaming_indicator}
+            <span style="margin-left:auto;font-size:11px;color:#999;">{focus_dot}{sarc_badge} {ts}</span>
+        </div>
+        <div style="font-size:14px;line-height:1.5;color:#212121;">{transcript}</div>
+        {'<div style="margin-top:4px;font-size:11px;color:#666;">' + meta + '</div>' if meta else ''}
+    </div>"""
+
+
 def render_live_transcript_compact():
-    """Render compact live transcript"""
-    recent_feedback = st.session_state.feedback_data[-20:]
-    
-    transcript_html = '<div style="max-height: 600px; overflow-y: auto; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">'
-    
-    for feedback in reversed(recent_feedback):
-        timestamp = datetime.fromtimestamp(feedback['timestamp']).strftime("%H:%M:%S")
-        speaker = feedback['speaker']
-        transcript = feedback.get('transcript', 'No transcript')
-        
-        if speaker == "coach":
-            transcript_html += f"""
-            <div style="background-color: #e3f2fd; padding: 8px; border-radius: 8px; margin: 5px 0; border-left: 4px solid #2196F3;">
-                <strong>🎯 Coach</strong> <small>({timestamp})</small><br>
-                <div style="margin-top: 5px;">{transcript}</div>
-                <small style="color: #666;">Phase: {feedback.get('grow_phase', {}).get('phase', 'Unknown')} | 
-                Engagement: {feedback.get('engagement_score', 0):.2f}</small>
-            </div>
-            """
-        else:
-            primary_emotion = max(feedback.get('emotion_trend', {}).items(), key=lambda x: x[1])[0] if feedback.get('emotion_trend') else 'Neutral'
-            transcript_html += f"""
-            <div style="background-color: #f3e5f5; padding: 8px; border-radius: 8px; margin: 5px 0; border-left: 4px solid #9C27B0;">
-                <strong>👤 Coachee</strong> <small>({timestamp})</small><br>
-                <div style="margin-top: 5px;">{transcript}</div>
-                <small style="color: #666;">Interest: {feedback.get('engagement_score', 0):.2f} | 
-                Emotion: {primary_emotion}</small>
-            </div>
-            """
-    
-    transcript_html += "</div>"
-    st.markdown(transcript_html, unsafe_allow_html=True)
+    """Split-column transcript: Coach left, Coachee right. Partials stream live."""
+    history  = st.session_state.transcript_history[-40:]
+    current  = st.session_state.current_utterances  # {'coach': str, 'coachee': str}
+
+    coach_msgs   = [m for m in history if m.get('speaker') == 'coach']
+    coachee_msgs = [m for m in history if m.get('speaker') == 'coachee']
+
+    col_coach, col_coachee = st.columns(2)
+
+    def render_column(msgs, speaker, live_text, col):
+        icon  = "🎯" if speaker == "coach" else "👤"
+        label = "Coach" if speaker == "coach" else "Coachee"
+        color = "#1565C0" if speaker == "coach" else "#6A1B9A"
+        with col:
+            st.markdown(
+                f'<div style="text-align:center;padding:6px;background:{"#e3f2fd" if speaker=="coach" else "#f3e5f5"};'
+                f'border-radius:6px;margin-bottom:8px;">'
+                f'<span style="font-weight:700;font-size:15px;color:{color};">{icon} {label}</span>'
+                f'<span style="font-size:12px;color:#666;margin-left:8px;">({len(msgs)} turns)</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+            # Newest-first: streaming bubble (in-progress utterance) on top,
+            # then finalized messages reversed so the most recent appears next.
+            cards = ""
+            if live_text:
+                cards += _utterance_card(
+                    {'speaker': speaker, 'transcript': live_text},
+                    streaming=True
+                )
+            cards += "".join(_utterance_card(m) for m in reversed(msgs[-15:]))
+            if not cards:
+                cards = '<div style="color:#aaa;text-align:center;padding:20px;font-size:13px;">Waiting…</div>'
+            # Use markdown with unsafe HTML to render custom HTML blocks for compatibility
+            st.markdown(f'<div style="max-height:520px;overflow-y:auto;padding:4px;">{cards}</div>', unsafe_allow_html=True)
+
+    render_column(coach_msgs,   'coach',   current.get('coach',   ''), col_coach)
+    render_column(coachee_msgs, 'coachee', current.get('coachee', ''), col_coachee)
 
 def render_latest_suggestions():
     """Render latest AI coaching suggestions"""
@@ -374,7 +525,11 @@ def render_latest_suggestions():
     
     if suggestions:
         for suggestion in suggestions:
-            st.success(f"💡 {suggestion}")
+            # Highlight sarcasm-related suggestions
+            if "sarcasm" in suggestion.lower() or "😏" in suggestion:
+                st.error(f"🚨 {suggestion}")
+            else:
+                st.success(f"💡 {suggestion}")
     else:
         st.info("✅ Coaching is on track")
     
@@ -391,30 +546,54 @@ def render_latest_suggestions():
         st.info(f"📌 {phase_guidance[phase]}")
 
 def render_analytics_dashboard():
-    """Render analytics dashboard with charts"""
+    """Render analytics dashboard with charts including sarcasm"""
     if len(st.session_state.feedback_data) < 2:
         st.info("Need more data points for analytics...")
         return
     
     df = pd.DataFrame(st.session_state.feedback_data)
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+    df['focus_score'] = 1 - df['digression_level']
+    df['authenticity_score'] = 1 - df.get('sarcasm_score', 0)
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        fig = px.line(df, x='timestamp', y='engagement_score', color='speaker', 
+        fig = px.line(df, x='timestamp', y='engagement_score', color='speaker',
                      title='Engagement Over Time',
                      color_discrete_map={'coach': '#1f77b4', 'coachee': '#ff7f0e'})
         fig.update_layout(height=300)
-        st.plotly_chart(fig, use_container_width=True)
-    
+        st.plotly_chart(fig, width="stretch", key="engagement_line")
+
     with col2:
+        fig = px.line(df, x='timestamp', y='focus_score',
+                     title='Topic Focus (Higher = Better)',
+                     color_discrete_sequence=['#2ca02c'])
+        fig.add_hline(y=0.7, line_dash="dash", line_color="green",
+                     annotation_text="Good Focus")
+        fig.update_layout(height=300)
+        st.plotly_chart(fig, width="stretch", key="focus_line")
+
+    with col3:
+        # NEW: Sarcasm tracking
+        if 'sarcasm_score' in df.columns:
+            fig = px.line(df, x='timestamp', y='authenticity_score',
+                         title='Tone Authenticity (Higher = Better)',
+                         color_discrete_sequence=['#9467bd'])
+            fig.add_hline(y=0.7, line_dash="dash", line_color="green",
+                         annotation_text="Authentic")
+            fig.add_hline(y=0.4, line_dash="dash", line_color="orange",
+                         annotation_text="Possibly Sarcastic")
+            fig.update_layout(height=300)
+            st.plotly_chart(fig, width="stretch", key="authenticity_line")
+
+    with col4:
         avg_engagement = df.groupby('speaker')['engagement_score'].mean()
         fig = px.bar(x=avg_engagement.index, y=avg_engagement.values,
-                    title='Average Engagement by Speaker', color=avg_engagement.index,
+                    title='Avg Engagement by Speaker', color=avg_engagement.index,
                     color_discrete_map={'coach': '#1f77b4', 'coachee': '#ff7f0e'})
         fig.update_layout(height=300)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch", key="avg_engagement_bar")
 
 def render_grow_phases():
     """Render GROW model phase tracking"""
@@ -443,16 +622,16 @@ def render_grow_phases():
     
     with col1:
         phase_counts = df_grow['phase'].value_counts()
-        fig = px.pie(values=phase_counts.values, names=phase_counts.index, 
+        fig = px.pie(values=phase_counts.values, names=phase_counts.index,
                     title='GROW Phase Distribution')
-        st.plotly_chart(fig, use_container_width=True)
-    
+        st.plotly_chart(fig, width="stretch", key="grow_pie")
+
     with col2:
         fig = px.scatter(df_grow, x='timestamp', y='phase', size='confidence',
                         title='GROW Phase Timeline', color='confidence',
                         color_continuous_scale='Viridis')
         fig.update_layout(height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch", key="grow_timeline")
 
 def render_emotion_tracking():
     """Render emotion tracking visualization"""
@@ -485,29 +664,72 @@ def render_emotion_tracking():
     fig = px.line(df_emotions, x='timestamp', y='score', color='emotion',
                  facet_col='speaker', title='Emotional Trends Over Time')
     fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch", key="emotion_facets")
 
 def render_session_report():
     """Render final session report"""
     st.header("📋 Session Report")
-    
+
+    # Never render a report while a new session is in progress — even if a
+    # stale final_report somehow lingers, the live view owns the screen.
+    if st.session_state.session_active:
+        return
+
     if 'final_report' not in st.session_state:
         st.info("Complete a session to generate a report...")
         return
     
-    report = st.session_state.final_report
+    report = st.session_state.final_report.get('report', st.session_state.final_report)
     
-    st.subheader(f"Session: {report['session_id']}")
-    st.write(f"Duration: {report['duration_minutes']:.1f} minutes")
+    st.subheader(f"Session: {report.get('session_id', 'Unknown')}")
+    st.write(f"Duration: {report.get('duration_minutes', 0):.1f} minutes")
     
     col1, col2, col3 = st.columns(3)
-    
+
+    eff = report.get('coaching_effectiveness') or {}
+    def _fmt(metric_key):
+        v = eff.get(metric_key)
+        return f"{v:.2f}" if isinstance(v, (int, float)) and v > 0 else "Not Available"
+
     with col1:
-        st.metric("Overall Effectiveness", f"{report['coaching_effectiveness'].get('overall', 0):.2f}")
+        st.metric("Overall Effectiveness", _fmt('overall'))
     with col2:
-        st.metric("Questioning Quality", f"{report['coaching_effectiveness'].get('questioning', 0):.2f}")
+        st.metric("Questioning Quality", _fmt('questioning'))
     with col3:
-        st.metric("Listening Quality", f"{report['coaching_effectiveness'].get('listening', 0):.2f}")
+        st.metric("Listening Quality", _fmt('listening'))
+
+    # Surface the wired-in sarcasm & digression rollups
+    sarc = report.get('sarcasm_summary') or {}
+    dig  = report.get('digression_summary') or {}
+    if sarc or dig:
+        st.subheader("🔎 Conversation Signals")
+        sc1, sc2 = st.columns(2)
+        with sc1:
+            if sarc:
+                st.write(f"**Sarcasm detected:** {sarc.get('count_detected', 0)} of {sarc.get('total_evaluated', 0)} turns "
+                         f"(avg score {sarc.get('average_score', 0):.2f}, peak {sarc.get('max_score', 0):.2f})")
+                if sarc.get('by_type'):
+                    st.write("Types: " + ", ".join(f"{k}={v}" for k, v in sarc['by_type'].items()))
+            else:
+                st.write("**Sarcasm:** Not Available")
+        with sc2:
+            if dig:
+                st.write(f"**Off-topic moments:** {dig.get('off_topic_moments', 0)} of {dig.get('total_evaluated', 0)} turns "
+                         f"(avg {dig.get('average_score', 0):.2f}, peak {dig.get('max_score', 0):.2f})")
+            else:
+                st.write("**Digression:** Not Available")
+
+    # Learning style (real VAK if available, else "Insufficient Data")
+    vak = report.get('learning_style_analysis') or {}
+    if vak:
+        st.subheader("👁️👂✋ Learning Style (VAK)")
+        v1, v2, v3 = st.columns(3)
+        v1.metric("Visual", f"{vak.get('visual', 0):.0%}")
+        v2.metric("Auditory", f"{vak.get('auditory', 0):.0%}")
+        v3.metric("Kinesthetic", f"{vak.get('kinesthetic', 0):.0%}")
+    else:
+        st.subheader("👁️👂✋ Learning Style (VAK)")
+        st.info("Insufficient Data")
     
     st.subheader("🔍 Key Insights")
     for insight in report.get('key_insights', []):
@@ -525,7 +747,7 @@ def render_session_report():
         st.download_button(
             label="Download JSON Report",
             data=report_json,
-            file_name=f"coaching_report_{report['session_id']}.json",
+            file_name=f"coaching_report_{report.get('session_id', 'unknown')}.json",
             mime="application/json"
         )
 
@@ -572,12 +794,14 @@ def main():
             ## 🚀 Getting Started
             
             1. **Start Session**: Click "▶️ Start Session" in the sidebar
-            2. **Monitor Live**: Watch real-time GROW phases, engagement, and suggestions
+            2. **Monitor Live**: Watch real-time GROW phases, engagement, digression, sarcasm, and suggestions
             3. **Stop Session**: Click "⏹️ Stop Session" to generate comprehensive report
             
             ### 📊 Live Features
             - **GROW Phase Tracking**: See current coaching phase in real-time
             - **Engagement Monitoring**: Track coachee interest level
+            - **Topic Focus**: Monitor conversation digression (staying on-topic)
+            - **Sarcasm Detection**: Identify passive-aggression and resistance
             - **Learning Style Detection**: Identify VAK preferences
             - **AI Suggestions**: Get instant coaching advice
             """)

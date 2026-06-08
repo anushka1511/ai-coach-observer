@@ -250,9 +250,19 @@ For production deployment:
 ## 🤝 Support
 
 For issues or questions:
-1. Check the troubleshooting section
-2. Review logs in the terminal output
-3. Verify API keys and internet connectivity
+1. Review logs in the terminal output
+2. Verify API keys and internet connectivity
+
+   QUICK RUN
+   # Terminal 1
+   .\venv\Scripts\Activate.ps1
+   python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+   
+   # Terminal 2
+   .\venv\Scripts\Activate.ps1
+   streamlit run frontend/streamlit_app.py
+---
+
 
 ---
 

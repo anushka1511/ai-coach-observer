@@ -11,6 +11,8 @@ class AudioChunk:
     speaker: str  # "coach" or "coachee"
     transcript: str
     audio_data: Optional[bytes] = None
+    speaker_id: Optional[str] = None  # Raw AssemblyAI id e.g. "SPEAKER_A"
+    is_final: bool = True             # False while AssemblyAI is still mid-utterance
 
 
 @dataclass
@@ -55,3 +57,5 @@ class SessionReport(BaseModel):
     coaching_effectiveness: Dict[str, float]
     recommendations: List[str]
     transcript_summary: str
+    sarcasm_summary: Dict[str, Any] = {}
+    digression_summary: Dict[str, Any] = {}
