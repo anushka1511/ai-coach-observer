@@ -1,4 +1,3 @@
-# ai-coach-observer
 # AI Coach Observer - Real-time Coaching Session Dashboard
 
 A comprehensive real-time dashboard system for monitoring and analyzing coaching sessions using the GROW model. Features live audio transcription, emotion recognition, engagement tracking, and AI-powered coaching analysis.
