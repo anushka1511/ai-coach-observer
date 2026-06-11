@@ -5,9 +5,6 @@ from typing import Dict, Any
 import google.generativeai as genai
 
 from backend.schemas.data_models import (
-    AudioChunk,
-    ModelInferences,
-    RealTimeFeedback,
     SessionReport,
 )
 
@@ -84,74 +81,6 @@ class GeminiAnalyzer:
         
         logger.error(f"Failed to parse JSON. Raw output: {text[:500]}...")
         raise ValueError(f"Could not extract valid JSON from response")
-
-    async def analyze_real_time(
-        self,
-        chunk: AudioChunk,
-        inferences: ModelInferences,
-        context: Dict[str, Any],
-    ) -> RealTimeFeedback:
-        """Generate real-time feedback for a coaching interaction"""
-        
-        prompt = f"""Analyze this coaching interaction and provide real-time feedback in JSON format.
-
-Current interaction:
-- Speaker: {chunk.speaker}
-- Text: "{chunk.transcript}"
-- Emotion: {inferences.emotion}
-- Engagement: {inferences.interest_level}
-- Sarcasm detected: {inferences.sarcasm_detected}
-
-Session context:
-- Previous interactions: {len(context.get('previous_chunks', []))}
-- Session duration: {context.get('duration_minutes', 0):.1f} minutes
-
-Provide feedback as JSON with this structure:
-{{
-    "engagement_score": 0.0-1.0,
-    "emotion": "string",
-    "coaching_technique": "string",
-    "grow_phase": "Goal/Reality/Options/Way Forward",
-    "learning_style": "Visual/Auditory/Kinesthetic",
-    "suggestion": "brief actionable suggestion",
-    "highlight": "key moment or insight"
-}}
-
-Return ONLY the JSON, no markdown formatting."""
-
-        if not self.model:
-            raise RuntimeError("Gemini model not available")
-
-        try:
-            response = await self.model.generate_content_async(prompt)
-            feedback_dict = self._parse_gemini_json(response.text)
-            
-            return RealTimeFeedback(
-                timestamp=chunk.timestamp,
-                speaker=chunk.speaker,
-                engagement_score=feedback_dict.get('engagement_score', 0.5),
-                emotion=feedback_dict.get('emotion', inferences.emotion),
-                coaching_technique=feedback_dict.get('coaching_technique', 'Unknown'),
-                grow_phase=feedback_dict.get('grow_phase', 'Reality'),
-                learning_style=feedback_dict.get('learning_style', 'Unknown'),
-                suggestion=feedback_dict.get('suggestion', 'Continue with current approach'),
-                highlight=feedback_dict.get('highlight', ''),
-            )
-            
-        except Exception as e:
-            logger.error(f"Real-time analysis error: {e}")
-            # Return fallback feedback
-            return RealTimeFeedback(
-                timestamp=chunk.timestamp,
-                speaker=chunk.speaker,
-                engagement_score=0.5,
-                emotion=inferences.emotion,
-                coaching_technique='Active Listening',
-                grow_phase='Reality',
-                learning_style='Unknown',
-                suggestion='Continue the conversation',
-                highlight='',
-            )
 
     async def generate_session_report(self, session_data: Dict[str, Any]) -> SessionReport:
         """Generate comprehensive session report"""

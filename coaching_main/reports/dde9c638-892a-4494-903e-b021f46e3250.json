@@ -1,0 +1,141 @@
+{
+  "session_id": "dde9c638-892a-4494-903e-b021f46e3250",
+  "duration_minutes": 1.6378829166666666,
+  "participants": {
+    "coach": {
+      "total_turns": 7.0,
+      "engagement_avg": 0.5335714285714286,
+      "avg_words": 15.0
+    },
+    "coachee": {
+      "total_turns": 5.0,
+      "engagement_avg": 0.5740000000000001,
+      "avg_words": 18.6
+    }
+  },
+  "grow_phases": [
+    {
+      "phase": "Uncertain",
+      "percentage": 140.0,
+      "avg_confidence": 0.0
+    },
+    {
+      "phase": "Reality",
+      "percentage": 60.0,
+      "avg_confidence": 0.6
+    },
+    {
+      "phase": "Way Forward",
+      "percentage": 20.0,
+      "avg_confidence": 0.6
+    },
+    {
+      "phase": "Goal",
+      "percentage": 20.0,
+      "avg_confidence": 0.75
+    }
+  ],
+  "emotional_journey": {
+    "coach": [
+      {
+        "timestamp": 1781162380.279714,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162381.084385,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162383.982931,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162403.90885,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162423.390646,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162441.89762,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162449.023794,
+        "emotion": "neutral",
+        "confidence": 1.0
+      }
+    ],
+    "coachee": [
+      {
+        "timestamp": 1781162401.507366,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162413.057901,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162416.634653,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162421.190356,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162430.444674,
+        "emotion": "neutral",
+        "confidence": 1.0
+      }
+    ]
+  },
+  "learning_style_analysis": {
+    "visual": 0.1746031746031746,
+    "auditory": 0.0,
+    "kinesthetic": 0.8253968253968255
+  },
+  "key_insights": [
+    "Coach asked 4 questions, 50% were open-ended. 1 powerful questions were used to deepen exploration.",
+    "Main coaching themes: relationships, career, confidence",
+    "Coachee engagement stable throughout session (avg: 0.55). 0 moments of low engagement detected.",
+    "Coach demonstrated active listening with 1 listening indicators and 0 reflections.",
+    "Notable moments: Powerful question at 1781162449.0s: 'Yeah okay what more can you tell me about your relationship ...'"
+  ],
+  "coaching_effectiveness": {
+    "overall": 0.48329761904761903,
+    "questioning": 0.575,
+    "listening": 0.2857142857142857,
+    "engagement_management": 0.5504166666666667
+  },
+  "recommendations": [
+    "Increase open-ended questions. Try 'What else?', 'How do you feel about that?', 'What would success look like?'",
+    "Incorporate more powerful questions to deepen thinking: 'What if that weren't true?', 'What's really important here?', 'What are you not saying?'",
+    "Enhance active listening by reflecting back what you hear: 'So what I'm hearing is...', 'It sounds like...', 'Let me check if I understand...'"
+  ],
+  "transcript_summary": "The coach explored relationships, career, confidence with the coachee across 7 coach turns and 5 coachee responses. Coachee shared emotional state: 'As you know around the category unit as a team we're feeling really overwhelmed ' Questioning technique showed 50% open-ended questions with 1 powerful questions that deepened exploration. Coachee engagement stable throughout the session, averaging 0.55 with 0 moments requiring re-engagement. Key moment: Powerful question at 1781162449.0s: 'Yeah okay what more can you tell me about your relationship ...'",
+  "sarcasm_summary": {
+    "count_detected": 0,
+    "total_evaluated": 12,
+    "average_score": 0.0,
+    "max_score": 0.0,
+    "by_type": {}
+  },
+  "digression_summary": {
+    "average_score": 0.1175,
+    "max_score": 0.5,
+    "off_topic_moments": 0,
+    "total_evaluated": 12
+  }
+}

@@ -508,9 +508,21 @@ def render_live_transcript_compact():
             cards += "".join(_utterance_card(m) for m in reversed(msgs[-15:]))
             if not cards:
                 cards = '<div style="color:#aaa;text-align:center;padding:20px;font-size:13px;">Waiting…</div>'
-            # Use markdown with unsafe HTML to render custom HTML blocks for compatibility
-            st.markdown(f'<div style="max-height:520px;overflow-y:auto;padding:4px;">{cards}</div>', unsafe_allow_html=True)
+            import streamlit.components.v1 as components
 
+            components.html(
+                f"""
+                <html>
+                <body style="margin:0;padding:4px;">
+                    <div style="max-height:520px;overflow-y:auto;">
+                        {cards}
+                    </div>
+                </body>
+                </html>
+                """,
+                height=550,
+                scrolling=True
+            )
     render_column(coach_msgs,   'coach',   current.get('coach',   ''), col_coach)
     render_column(coachee_msgs, 'coachee', current.get('coachee', ''), col_coachee)
 

@@ -5,6 +5,7 @@ FULLY CORRECTED VERSION - Ready to use
 """
 import asyncio
 import logging
+import math
 import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any, Set, List
@@ -18,7 +19,6 @@ from backend.models.file_audio_processor import FileAudioProcessor
 from backend.models.enhanced_local_analyzer import EnhancedLocalAnalyzer
 from backend.models.contextual_suggestion_engine import ContextualSuggestionEngine
 from backend.schemas.data_models import AudioChunk, RealTimeFeedback, GROWPhase, SessionReport
-from backend.models.sarcasm_detector import SarcasmDetector
 from backend.models.storage import ChromaDBStorage
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,6 @@ class CoachingObserverSystem:
         self.file_processor: Optional[FileAudioProcessor] = None
         self.inference_engine = ModelInferenceEngine()
         self.gemini_analyzer = GeminiAnalyzer(gemini_key) if gemini_key else None
-        self.sarcasm_detector = SarcasmDetector()
         try:
             self.storage = ChromaDBStorage()
         except Exception as e:
@@ -542,76 +541,92 @@ class CoachingObserverSystem:
     # DIGRESSION DETECTION
     # ========================================================================
     
+    _SIMILARITY_STOP_WORDS = frozenset({
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+        'of', 'with', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has',
+        'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may',
+        'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he',
+        'she', 'it', 'we', 'they', 'my', 'your', 'what', 'how', 'why', 'when',
+        'about', 'just', 'like', 'really', 'think', 'know', 'going', 'want',
+        'need', 'feel', 'said', 'say', 'tell', 'talk', 'mean', 'right', 'well',
+    })
+
+    def _tokenize_for_similarity(self, text: str) -> List[str]:
+        """Tokenize text for cosine-similarity topic comparison."""
+        tokens = []
+        for word in text.lower().split():
+            clean = word.strip('.,!?;:"()[]')
+            if len(clean) > 2 and clean not in self._SIMILARITY_STOP_WORDS and not clean.isdigit():
+                tokens.append(clean)
+        return tokens
+
+    def _cosine_similarity(self, text_a: str, text_b: str) -> float:
+        """Cosine similarity between two utterances (0.0–1.0)."""
+        words_a = self._tokenize_for_similarity(text_a)
+        words_b = self._tokenize_for_similarity(text_b)
+        if not words_a or not words_b:
+            return 1.0
+
+        vec_a = Counter(words_a)
+        vec_b = Counter(words_b)
+        dot = sum(vec_a[k] * vec_b[k] for k in set(vec_a) | set(vec_b))
+        mag_a = math.sqrt(sum(v * v for v in vec_a.values()))
+        mag_b = math.sqrt(sum(v * v for v in vec_b.values()))
+        if mag_a == 0 or mag_b == 0:
+            return 1.0
+        return dot / (mag_a * mag_b)
+
     def _detect_digression(self, chunk: AudioChunk, conversation_history: List[AudioChunk]) -> float:
         """
-        Detect if conversation is going off-topic
+        Detect off-topic drift using semantic similarity over a rolling context window.
+        Conservative thresholds reduce false positives from normal coaching topic evolution.
         Returns: 0.0 (on topic) to 1.0 (very digressed)
         """
-        if len(conversation_history) < 3:
+        if len(conversation_history) < 4:
             return 0.0
-        
-        recent = conversation_history[-5:] if len(conversation_history) >= 5 else conversation_history
-        
-        main_topic_keywords = self._extract_topic_keywords(recent[:3])
-        current_text = chunk.transcript.lower()
-        
-        relevance_score = sum(1 for kw in main_topic_keywords if kw in current_text)
-        
-        digression_phrases = [
-            'by the way', 'speaking of', 'that reminds me', 'off topic',
-            'random thought', 'just thinking', 'unrelated', 'anyway',
-            'another thing', 'while we\'re at it', 'oh also'
-        ]
-        
-        has_digression_phrase = any(phrase in current_text for phrase in digression_phrases)
-        
-        if has_digression_phrase:
-            digression_score = 0.7
-        elif relevance_score == 0:
-            digression_score = 0.6
-        elif relevance_score == 1:
-            digression_score = 0.3
+
+        current = chunk.transcript.strip()
+        current_lower = current.lower()
+        word_count = len(current_lower.split())
+
+        if word_count <= 4:
+            return 0.0
+
+        window = (
+            conversation_history[-8:-1]
+            if len(conversation_history) > 8
+            else conversation_history[:-1]
+        )
+        context_text = ' '.join(c.transcript for c in window)
+        similarity = self._cosine_similarity(current, context_text)
+
+        explicit_markers = (
+            'by the way', 'off topic', 'off-topic', 'changing the subject',
+            'different topic', 'unrelated to', 'random thought',
+            "let's talk about something else",
+            'speaking of something completely different',
+        )
+        if any(marker in current_lower for marker in explicit_markers):
+            return min(0.85, 0.65 + (1.0 - similarity) * 0.2)
+
+        is_question = '?' in current
+
+        if similarity >= 0.20:
+            score = 0.05
+        elif similarity >= 0.12:
+            score = 0.12
+        elif similarity >= 0.07:
+            score = 0.28 if word_count >= 8 and not is_question else 0.10
+        elif is_question:
+            score = 0.15
+        elif word_count >= 12:
+            score = 0.50
+        elif word_count >= 8:
+            score = 0.32
         else:
-            digression_score = 0.1
-        
-        if len(recent) >= 2:
-            previous_keywords = self._extract_topic_keywords([recent[-2]])
-            current_keywords = self._extract_topic_keywords([chunk])
-            
-            overlap = len(set(previous_keywords) & set(current_keywords))
-            if overlap == 0 and len(previous_keywords) > 0:
-                digression_score = max(digression_score, 0.5)
-        
-        return min(digression_score, 1.0)
-    
-    def _extract_topic_keywords(self, chunks: List[AudioChunk]) -> List[str]:
-        """Extract main topic keywords from chunks"""
-        if not chunks:
-            return []
-        
-        combined_text = ' '.join([c.transcript.lower() for c in chunks])
-        
-        stop_words = {
-            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-            'of', 'with', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has',
-            'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may',
-            'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he',
-            'she', 'it', 'we', 'they', 'my', 'your', 'what', 'how', 'why', 'when'
-        }
-        
-        words = combined_text.split()
-        keywords = []
-        
-        for word in words:
-            clean_word = word.strip('.,!?;:"()[]')
-            
-            if (len(clean_word) > 4 and 
-                clean_word not in stop_words and 
-                not clean_word.isdigit()):
-                keywords.append(clean_word)
-        
-        keyword_counts = Counter(keywords)
-        return [kw for kw, count in keyword_counts.most_common(5)]
+            score = 0.15
+
+        return min(score, 1.0)
 
     # ========================================================================
     # GROW PHASE ANALYSIS

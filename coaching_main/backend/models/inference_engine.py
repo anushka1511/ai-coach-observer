@@ -220,8 +220,6 @@ class ModelInferenceEngine:
         if self.models.get('vak_inference'):
             inference_tasks['vak'] = self._run_vak_inference(chunk)
         
-        inference_tasks['digression'] = self._run_digression_inference(chunk)
-        
         results = {}
         if inference_tasks:
             try:
@@ -247,7 +245,7 @@ class ModelInferenceEngine:
             interest_level=results.get('interest', 0.5),
             sarcasm_score=results.get('sarcasm', 0.0),
             vak_style=results.get('vak', {}),
-            digression_score=results.get('digression', 0.0)
+            digression_score=0.0
         )
     
     async def _run_emotion_inference(self, chunk: AudioChunk) -> Dict[str, float]:
@@ -324,10 +322,6 @@ class ModelInferenceEngine:
             logger.error(f"VAK inference error: {e}")
             raise ModelInferenceError(f"VAK model inference failed: {e}")
     
-    async def _run_digression_inference(self, chunk: AudioChunk) -> float:
-        """Placeholder for LLM-based digression detection"""
-        return 0.1
-    
     def _get_fallback_result(self, task_name: str) -> Any:
         """Get fallback results when models fail"""
         fallbacks = {
@@ -335,7 +329,6 @@ class ModelInferenceEngine:
             'interest': 0.5,
             'sarcasm': 0.0,
             'vak': {},
-            'digression': 0.1
         }
         return fallbacks.get(task_name, None)
     

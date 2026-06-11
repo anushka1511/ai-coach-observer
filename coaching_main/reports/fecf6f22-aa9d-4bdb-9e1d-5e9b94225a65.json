@@ -1,0 +1,160 @@
+{
+  "session_id": "fecf6f22-aa9d-4bdb-9e1d-5e9b94225a65",
+  "duration_minutes": 2.1910191,
+  "participants": {
+    "coach": {
+      "total_turns": 13.0,
+      "engagement_avg": 0.528846153846154,
+      "avg_words": 8.538461538461538
+    },
+    "coachee": {
+      "total_turns": 4.0,
+      "engagement_avg": 0.5750000000000001,
+      "avg_words": 18.0
+    }
+  },
+  "grow_phases": [
+    {
+      "phase": "Uncertain",
+      "percentage": 325.0,
+      "avg_confidence": 0.0
+    },
+    {
+      "phase": "Reality",
+      "percentage": 75.0,
+      "avg_confidence": 0.6
+    },
+    {
+      "phase": "Way Forward",
+      "percentage": 25.0,
+      "avg_confidence": 0.6
+    }
+  ],
+  "emotional_journey": {
+    "coach": [
+      {
+        "timestamp": 1781162143.206516,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162145.861446,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162146.67003,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162149.381664,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162154.934616,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162155.804417,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162158.679792,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162175.921197,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162178.362063,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162201.09286,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162211.869039,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162216.481614,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162216.70114,
+        "emotion": "neutral",
+        "confidence": 1.0
+      }
+    ],
+    "coachee": [
+      {
+        "timestamp": 1781162167.493573,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162187.582839,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162197.919648,
+        "emotion": "neutral",
+        "confidence": 1.0
+      },
+      {
+        "timestamp": 1781162205.143615,
+        "emotion": "neutral",
+        "confidence": 1.0
+      }
+    ]
+  },
+  "learning_style_analysis": {
+    "visual": 0.35714285714285715,
+    "auditory": 0.0,
+    "kinesthetic": 0.6428571428571429
+  },
+  "key_insights": [
+    "Coach asked 3 questions, 33% were open-ended. 0 powerful questions were used to deepen exploration.",
+    "Main coaching themes: career, relationships",
+    "Coachee engagement stable throughout session (avg: 0.54). 0 moments of low engagement detected.",
+    "Coach demonstrated active listening with 1 listening indicators and 0 reflections."
+  ],
+  "coaching_effectiveness": {
+    "overall": 0.32076168929110105,
+    "questioning": 0.3333333333333333,
+    "listening": 0.15384615384615385,
+    "engagement_management": 0.5397058823529413
+  },
+  "recommendations": [
+    "Increase open-ended questions. Try 'What else?', 'How do you feel about that?', 'What would success look like?'",
+    "Incorporate more powerful questions to deepen thinking: 'What if that weren't true?', 'What's really important here?', 'What are you not saying?'",
+    "Enhance active listening by reflecting back what you hear: 'So what I'm hearing is...', 'It sounds like...', 'Let me check if I understand...'"
+  ],
+  "transcript_summary": "The coach explored career, relationships with the coachee across 13 coach turns and 4 coachee responses. Coachee shared emotional state: 'I really feel it's making the impact of myself personally' Questioning technique showed 33% open-ended questions with 0 powerful questions that deepened exploration. Coachee engagement stable throughout the session, averaging 0.54 with 0 moments requiring re-engagement.",
+  "sarcasm_summary": {
+    "count_detected": 0,
+    "total_evaluated": 17,
+    "average_score": 0.0,
+    "max_score": 0.0,
+    "by_type": {}
+  },
+  "digression_summary": {
+    "average_score": 0.15764705882352942,
+    "max_score": 0.5,
+    "off_topic_moments": 0,
+    "total_evaluated": 17
+  }
+}
